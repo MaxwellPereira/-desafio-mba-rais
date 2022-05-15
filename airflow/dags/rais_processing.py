@@ -137,7 +137,7 @@ def pipeline_rais():
 
 
     @task
-    def terminate_emr_cluster(success_before: str, cid: str):
+    def terminate_emr_cluster(success_before: bool, cid: str):
         if success_before:
             res = client.terminate_job_flows(
                 JobFlowIds=[cid]
