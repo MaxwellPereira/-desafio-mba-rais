@@ -24,14 +24,14 @@ default_args = {
     "email_on_retry": False
 }
 
-@dag(default_args=default_args, schedule_interval=None, catchup=False, tags=["emr", "aws", "rais"], description="Pipeline para processamento de dados do rais 2020")
-def pipeline_rais():
+@dag(default_args=default_args, schedule_interval=None, catchup=False, tags=["emr", "aws", "enem"], description="Pipeline para processamento de dados do enem 2020")
+def pipeline_enem():
     """
-    Pipeline para processamento de dados do RAIS 2020.
+    Pipeline para processamento de dados do ENEM 2020.
     """
 
     @task
-    def emr_process_rais_data():
+    def emr_process_enem_data():
         cluster_id = client.run_job_flow(
             Name='EMR-mba-IGTI',
             ServiceRole='EMR_DefaultRole',
@@ -99,7 +99,7 @@ def pipeline_rais():
             ],
 
             Steps=[{
-                'Name': 'Primeiro processamento do RAIS',
+                'Name': 'Primeiro processamento do ENEM',
                 'ActionOnFailure': 'TERMINATE_CLUSTER',
                 'HadoopJarStep': {
                     'Jar': 'command-runner.jar',
@@ -145,9 +145,9 @@ def pipeline_rais():
 
 
     # Encadeando a pipeline
-    cluid = emr_process_rais_data()
+    cluid = emr_process_enem_data()
     res_emr = wait_emr_step(cluid)
     res_ter = terminate_emr_cluster(res_emr, cluid)
 
 
-execucao = pipeline_rais()
+execucao = pipeline_enem()
