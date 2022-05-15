@@ -16,7 +16,7 @@ s3client = boto3.client("s3", aws_access_key_id=aws_access_key_id,
 
 # Usando a novíssima Taskflow API
 default_args = {
-    'owner': 'Neylson Crepalde',
+    'owner': 'Maxwell Silva',
     "depends_on_past": False,
     "start_date": days_ago(2),
     "email": ["airflow@airflow.com"],
@@ -33,7 +33,7 @@ def pipeline_enem():
     @task
     def emr_process_enem_data():
         cluster_id = client.run_job_flow(
-            Name='EMR-Ney-IGTI',
+            Name='EMR-MBA-IGTI',
             ServiceRole='EMR_DefaultRole',
             JobFlowRole='EMR_EC2_DefaultRole',
             VisibleToAllUsers=True,
@@ -43,12 +43,14 @@ def pipeline_enem():
                 'InstanceGroups': [
                     {
                         'Name': 'Master nodes',
+                        'Market': 'SPOT',
                         'InstanceRole': 'MASTER',
                         'InstanceType': 'm5.xlarge',
                         'InstanceCount': 1,
                     },
                     {
                         'Name': 'Worker nodes',
+                        'Market': 'SPOT',
                         'InstanceRole': 'CORE',
                         'InstanceType': 'm5.xlarge',
                         'InstanceCount': 1,
@@ -102,14 +104,9 @@ def pipeline_enem():
     @task
     def wait_emr_step(cid: str):
         waiter = client.get_waiter('step_complete')
-        steps = client.list_steps(
-            ClusterId=cid
-        )
-        stepId = steps['Steps'][0]['Id']
 
         waiter.wait(
             ClusterId=cid,
-            StepId=stepId,
             WaiterConfig={
                 'Delay': 30,
                 'MaxAttempts': 120
@@ -141,7 +138,7 @@ def pipeline_enem():
             return newstep['StepIds'][0]
 
     @task
-    def wait_upsert_delta(cid: str, stepId: str):
+    def wait_insert_delta(cid: str, stepId: str):
         waiter = client.get_waiter('step_complete')
 
         waiter.wait(
@@ -156,7 +153,7 @@ def pipeline_enem():
 
 
     @task
-    def terminate_emr_cluster(success_before: str, cid: str):
+    def terminate_emr_cluster(success_before: bool, cid: str):
         if success_before:
             res = client.terminate_job_flows(
                 JobFlowIds=[cid]
@@ -167,7 +164,7 @@ def pipeline_enem():
     cluid = emr_process_enem_data()
     res_emr = wait_emr_step(cluid)
     newstep = insert_delta(cluid, res_emr)
-    res_ba = wait_upsert_delta(cluid, newstep)
+    res_ba = wait_insert_delta(cluid, newstep)
     res_ter = terminate_emr_cluster(res_ba, cluid)
 
 
