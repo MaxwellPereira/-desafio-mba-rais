@@ -16,7 +16,7 @@ s3client = boto3.client("s3", aws_access_key_id=aws_access_key_id,
 
 # Usando a novíssima Taskflow API
 default_args = {
-    'owner': 'Maxwell Silva',
+    'owner': 'Neylson Crepalde',
     "depends_on_past": False,
     "start_date": days_ago(2),
     "email": ["airflow@airflow.com"],
@@ -24,16 +24,16 @@ default_args = {
     "email_on_retry": False
 }
 
-@dag(default_args=default_args, schedule_interval=None, catchup=False, tags=["emr", "aws", "rais"], description="Pipeline para processamento de dados do rais 2020")
-def pipeline_rais():
+@dag(default_args=default_args, schedule_interval=None, catchup=False, tags=["emr", "aws", "enem"], description="Pipeline para processamento de dados do ENEM 2019")
+def pipeline_enem():
     """
-    Pipeline para processamento de dados do RAIS 2020.
+    Pipeline para processamento de dados do ENEM 2019.
     """
 
     @task
-    def emr_process_rais_data():
+    def emr_process_enem_data():
         cluster_id = client.run_job_flow(
-            Name='EMR-mba-IGTI',
+            Name='EMR-Ney-IGTI',
             ServiceRole='EMR_DefaultRole',
             JobFlowRole='EMR_EC2_DefaultRole',
             VisibleToAllUsers=True,
@@ -43,14 +43,12 @@ def pipeline_rais():
                 'InstanceGroups': [
                     {
                         'Name': 'Master nodes',
-                        'Market': 'SPOT',
                         'InstanceRole': 'MASTER',
                         'InstanceType': 'm5.xlarge',
                         'InstanceCount': 1,
                     },
                     {
                         'Name': 'Worker nodes',
-                        'Market': 'SPOT',
                         'InstanceRole': 'CORE',
                         'InstanceType': 'm5.xlarge',
                         'InstanceCount': 1,
@@ -97,22 +95,6 @@ def pipeline_rais():
                     }
                 }
             ],
-
-            Steps=[{
-                'Name': 'Primeiro processamento do RAIS',
-                'ActionOnFailure': 'TERMINATE_CLUSTER',
-                'HadoopJarStep': {
-                    'Jar': 'command-runner.jar',
-                    'Args': ['spark-submit',
-                            '--packages', 'io.delta:delta-core_2.12:1.0.0', 
-                            '--conf', 'spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension', 
-                            '--conf', 'spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog', 
-                            '--master', 'yarn',
-                            '--deploy-mode', 'cluster',
-                            's3://datalake-maxwell-igti-edc-tf/emr-code/pyspark/01_delta_spark_insert_enem.py'
-                        ]
-                }
-            }],
         )
         return cluster_id["JobFlowId"]
 
@@ -135,6 +117,43 @@ def pipeline_rais():
         )
         return True
 
+    @task
+    def insert_delta(cid: str, success_before: bool):
+        if success_before:
+            newstep = client.add_job_flow_steps(
+                JobFlowId=cid,
+                Steps=[{
+                    'Name': 'Primeiro processamento do ENEM',
+                    'ActionOnFailure': 'TERMINATE_CLUSTER',
+                    'HadoopJarStep': {
+                        'Jar': 'command-runner.jar',
+                        'Args': ['spark-submit',
+                                '--packages', 'io.delta:delta-core_2.12:1.0.0', 
+                                '--conf', 'spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension', 
+                                '--conf', 'spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog', 
+                                '--master', 'yarn',
+                                '--deploy-mode', 'cluster',
+                                's3://datalake-maxwell-igti-edc-tf/emr-code/pyspark/01_delta_spark_insert_enem.py'
+                            ]
+                    }
+                }]
+            )
+            return newstep['StepIds'][0]
+
+    @task
+    def wait_upsert_delta(cid: str, stepId: str):
+        waiter = client.get_waiter('step_complete')
+
+        waiter.wait(
+            ClusterId=cid,
+            StepId=stepId,
+            WaiterConfig={
+                'Delay': 30,
+                'MaxAttempts': 120
+            }
+        )
+        return True
+
 
     @task
     def terminate_emr_cluster(success_before: str, cid: str):
@@ -145,9 +164,11 @@ def pipeline_rais():
 
 
     # Encadeando a pipeline
-    cluid = emr_process_rais_data()
+    cluid = emr_process_enem_data()
     res_emr = wait_emr_step(cluid)
-    res_ter = terminate_emr_cluster(res_emr, cluid)
+    newstep = insert_delta(cluid, res_emr)
+    res_ba = wait_upsert_delta(cluid, newstep)
+    res_ter = terminate_emr_cluster(res_ba, cluid)
 
 
-execucao = pipeline_rais()
+execucao = pipeline_enem()
