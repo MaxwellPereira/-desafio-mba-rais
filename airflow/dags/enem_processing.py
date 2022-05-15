@@ -56,7 +56,7 @@ def pipeline_enem():
                         'InstanceCount': 1,
                     }
                 ],
-                'Ec2KeyName': 'ney-igti-teste',
+                'Ec2KeyName': 'exercicio-mba',
                 'KeepJobFlowAliveWhenNoSteps': True,
                 'TerminationProtected': False,
                 'Ec2SubnetId': 'subnet-997ee1d5'
